@@ -4,9 +4,22 @@
  * 所有数据读取异步，绝不阻塞 UI 线程
  */
 const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu } = require('electron');
-// 注意：不再调用 app.disableHardwareAcceleration()，改由启动脚本传 --in-process-gpu --disable-gpu
-// 原因：在无 GPU 的 Windows 远程桌面/VM 环境中，disableHardwareAcceleration() 与 --in-process-gpu
-// 共存时仍会导致 "Renderer process killed"。统一由 CLI 参数控制更可靠。
+// GPU 兼容（关键，避免打包后 exe 闪退）：
+//   开发模式靠 scripts/start-clean.js 传 CLI 参数；但「打包后的 exe」走 electron 默认启动，
+//   不会带那些参数 → 在无显卡环境（VM / 远程桌面 / 部分笔记本）必崩（GPU 子进程 fatal 退出，
+//   连带 kill 渲染进程 → 窗口一闪而过）。
+//   故在应用层用 app.commandLine 强制设置，开发/打包都生效：
+//     --in-process-gpu        把 GPU 跑进主进程，干掉必崩的独立 GPU 子进程
+//     --disable-gpu           走软件渲染（本应用是 DOM 悬浮球，无需 GPU）
+//     --no-sandbox            避免沙箱限制加剧崩溃
+//     --disable-dev-shm-usage 避免 /dev/shm 空间不足导致崩溃
+//   注意：绝不调用 app.disableHardwareAcceleration() —— 它与 in-process-gpu 冲突会 kill 渲染进程。
+if (app.commandLine) {
+  app.commandLine.appendSwitch('in-process-gpu');
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('disable-dev-shm-usage');
+}
 const path = require('path');
 const fs = require('fs');
 const os = require('os');

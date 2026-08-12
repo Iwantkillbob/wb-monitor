@@ -67,7 +67,13 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+      "executableArgs": [
+        "--in-process-gpu",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--disable-dev-shm-usage"
+      ]
     },
     "nsis": {
       "oneClick": false,
