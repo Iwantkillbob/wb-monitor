@@ -1,0 +1,443 @@
+/* ===== WB Monitor v4 — 纯 CSS 毛玻璃（不依赖 transparent:true）===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* 关键：html/body 必须有确定高度，否则子元素 height:100% 会塌成 0 */
+html, body { width: 100%; height: 100%; }
+
+body {
+  overflow: hidden;
+  background: #1a1a2e;
+  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  color: #e0e0e0;
+}
+
+/* ===== 容器 ===== */
+.ball-container {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(145deg, #1e1e32 0%, #16162a 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(100, 140, 255, 0.15);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* ===== 悬浮球（收起态）—— 面板收起时显示在右上角 ===== */
+.ball {
+  display: none; /* 展开态隐藏，收起为悬浮球时由 JS 设为 flex */
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #252542, #1a1a30);
+  border: 1.5px solid rgba(100, 160, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    0 0 12px rgba(100, 140, 255, 0.15);
+}
+.ball:hover { transform: scale(1.08); }
+.ball:active { cursor: grabbing; transform: scale(0.95); }
+
+.ball-icon { font-size: 22px; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); }
+
+.ball-pulse {
+  position: absolute; width: 100%; height: 100%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(100,140,255,0.3) 0%, transparent 70%);
+  animation: pulse 2s ease-in-out infinite; pointer-events: none;
+}
+@keyframes pulse {
+  0%,100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.3); }
+}
+
+/* ===== 展开面板（默认可见） ===== */
+.panel {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #1e1e35 0%, #15152a 50%, #1a1a30 100%);
+  /* 模拟毛玻璃的微光纹理 */
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(100,140,255,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(167,139,250,0.04) 0%, transparent 50%);
+  border: 1px solid rgba(100, 140, 255, 0.18);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+  overflow-y: auto;
+  animation: panelIn 0.2s ease-out;
+}
+@keyframes panelIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.panel.hidden { display: none !important; }
+
+/* 收起模式：只显示球 */
+.panel.collapsed .panel-body,
+.panel.collapsed .panel-footer { display: none; }
+.panel.collapsed .panel-header { 
+  padding: 8px 14px; 
+  background: transparent; 
+  border: none; 
+}
+
+/* ===== 面板头部 ===== */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.15);
+  border-radius: 16px 16px 0 0;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.3px;
+}
+
+.panel-btn {
+  width: 24px; height: 24px; border: none; border-radius: 6px;
+  background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5);
+  font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.panel-btn:hover { background: rgba(255,80,80,0.2); color: #ff6b6b; }
+
+/* ===== 面板内容区 ===== */
+.panel-body {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ===== 指标卡片 ===== */
+.metric-card {
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: background 0.15s;
+}
+.metric-card:hover { background: rgba(255,255,255,0.05); }
+
+/* ===== 实时调用明细 feed（cc switch 风格）===== */
+.feed-card { padding: 10px 12px 8px; }
+.feed-hint { font-size: 10px; color: rgba(255,255,255,0.35); font-weight: normal; margin-left: 4px; }
+
+/* 当前模型 + 花费（最显眼，最先显示）*/
+.model-headline { display: flex; flex-direction: column; gap: 3px; margin: 2px 0 7px; padding: 8px 11px; background: rgba(255,255,255,0.05); border-radius: 9px; border-left: 3px solid #6cceb0; }
+.model-name { font-size: 15px; font-weight: 700; color: #6cceb0; font-family: 'SF Mono','Consolas',monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-cost { font-size: 12px; color: rgba(255,255,255,0.7); }
+.model-cost b { color: #ffd93d; font-weight: 700; }
+
+/* 实时速率仪表（类比网速卡）*/
+.model-live { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 8px; padding: 7px 9px; background: rgba(108,206,176,0.07); border: 1px solid rgba(108,206,176,0.18); border-radius: 9px; }
+.model-rate { font-size: 12px; font-weight: 700; font-family: 'SF Mono','Consolas',monospace; color: rgba(255,255,255,0.92); letter-spacing: 0.2px; }
+.model-rate .up { color: #ffd93d; }
+.model-rate .down { color: #a78bfa; }
+.model-status { font-size: 10px; color: rgba(255,255,255,0.45); }
+.model-status.active { color: #6cceb0; font-weight: 600; }
+.calls-feed {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.calls-feed::-webkit-scrollbar { width: 5px; }
+.calls-feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+.call-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-family: 'SF Mono','Consolas',monospace;
+}
+.call-row:last-child { border-bottom: none; }
+.call-row .call-time { color: rgba(255,255,255,0.5); font-size: 10px; }
+.call-row .call-mid { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.call-row .call-model { color: #6cceb0; font-weight: 600; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-row .call-io { color: rgba(255,255,255,0.6); font-size: 10px; }
+.call-row .call-io .in { color: #ffd93d; }
+.call-row .call-io .out { color: #a78bfa; }
+.call-row .call-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.call-row .call-cost { color: #ffd93d; font-weight: 700; font-size: 11px; }
+.call-row .call-cost.zero { color: rgba(255,255,255,0.25); }
+.call-row .call-meta { color: rgba(255,255,255,0.4); font-size: 10px; }
+.call-row .call-meta .st-ok { color: #6cceb0; }
+.call-row .call-meta .st-bad { color: #ff6b6b; }
+.call-row.latest { background: rgba(108,206,176,0.06); }
+
+/* ===== 紧凑汇总 ===== */
+.summary-card.compact { padding: 8px 10px; }
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  text-align: center;
+}
+.sum-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.sum-cell > span:first-child { font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.9); font-family: 'SF Mono','Consolas',monospace; }
+.sum-cell small { font-size: 9px; color: rgba(255,255,255,0.4); }
+
+.metric-label {
+  font-size: 11px; font-weight: 500;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;
+}
+
+.metric-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+
+.metric-value {
+  font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.upload-color { color: #4ecdc4; }
+.download-color { color: #ff6b9d; }
+
+.fps-value { color: #ffd93d; min-width: 65px; }
+.metric-fps-bar {
+  width: 80px; height: 5px; border-radius: 3px;
+  background: rgba(255,255,255,0.08); overflow: hidden; position: relative;
+}
+.metric-fps-bar::after {
+  content: ''; position: absolute; left: 0; top: 0; height: 100%;
+  border-radius: 3px; background: linear-gradient(90deg,#ffd93d,#ff9f43);
+  transition: width 0.3s; width: 100%;
+}
+
+/* ===== Token 卡片 ===== */
+.token-section {
+  padding: 10px 12px; border-radius: 11px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(6,182,212,0.04));
+  border: 1px solid rgba(99,102,241,0.15);
+}
+
+.token-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.token-item { display: flex; flex-direction: column; gap: 2px; }
+.token-sub-label { font-size: 10px; color: rgba(255,255,255,0.33); text-transform: uppercase; letter-spacing: 0.5px; }
+.token-num { font-size: 16px; font-weight: 700; color: rgba(255,255,255,0.92); font-variant-numeric: tabular-nums; }
+.token-model { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.7); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.token-subrow { display: flex; gap: 12px; margin-top: 4px; }
+.token-subitem { font-size: 10px; color: rgba(255,255,255,0.38); }
+.token-subitem strong { color: rgba(168,139,250,0.8); font-weight: 600; }
+
+.token-detail-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: rgba(255,255,255,0.45);
+  padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.05);
+}
+.token-detail-row strong { color: rgba(255,255,255,0.85); font-weight: 600; }
+
+/* ===== 按模型分布 ===== */
+.models-list { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.model-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; padding: 3px 0;
+}
+.model-name { color: rgba(167,139,250,0.9); font-weight: 600; }
+.model-val { color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; }
+
+.status-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 600;
+}
+.status-ok { background: rgba(108,206,176,0.15); color: #6cceb0; }
+.status-warn { background: rgba(255,217,61,0.15); color: #ffd93d; }
+
+/* ===== 今日累计 ===== */
+.summary-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.summary-item { text-align: center; }
+.summary-val { font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.88); }
+.summary-lbl { font-size: 9px; color: rgba(255,255,255,0.3); text-transform: uppercase; }
+
+/* ===== 底部按钮栏 ===== */
+.panel-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.footer-btn {
+  width: 26px; height: 26px; border: none; border-radius: 6px;
+  background: transparent; color: rgba(255,255,255,0.35);
+  font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.footer-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+.footer-btn.active { color: rgba(100,160,255,0.85); }
+.footer-info { font-size: 10px; color: rgba(255,255,255,0.2); }
+
+/* ===== 状态颜色 ===== */
+.status-ok { color: #6cceb0 !important; }
+.status-warn { color: #ffd93d !important; }
+.status-error { color: #ff6b6b !important; }
+
+/* ===== 收起为悬浮球模式（兜底：即使窗口 resize 延迟也不显示大片黑底）===== */
+body.mode-ball {
+  background: transparent !important;
+}
+body.mode-ball .ball-container {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+::-webkit-scrollbar { display: none; }
+
+.source-tag {
+  display: inline-block; font-size: 9px; padding: 1px 6px; border-radius: 4px;
+  background: rgba(99,102,241,0.15); color: rgba(167,139,250,0.85);
+  vertical-align: middle; margin-left: 4px;
+}
+
+/* ===== 头部：远程调用计数徽标 ===== */
+.remote-count {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 9px; font-weight: 600; padding: 1px 7px; border-radius: 8px;
+  background: rgba(255,159,67,0.15); color: #ff9f43;
+  margin-left: 6px; white-space: nowrap;
+}
+.remote-count::before { content: '🛰'; font-size: 9px; }
+
+/* ===== 指标标签里的小提示 ===== */
+.label-hint {
+  font-size: 9px; color: rgba(255,255,255,0.3); text-transform: none;
+  letter-spacing: 0; margin-left: 6px; font-weight: 400;
+}
+
+/* ===== 各模型成本卡片（含 Claude/GPT，记在 auto 下）===== */
+.cost-card {
+  background: linear-gradient(135deg, rgba(255,159,67,0.06), rgba(255,217,61,0.03));
+  border: 1px solid rgba(255,159,67,0.15);
+}
+.model-cost-list {
+  display: flex; flex-direction: column; gap: 3px; margin-top: 2px;
+}
+.cost-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 5px 9px; border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  border-left: 2px solid rgba(255,159,67,0.4);
+  font-family: 'SF Mono','Consolas',monospace;
+}
+.cost-row.auto {
+  background: rgba(255,159,67,0.08);
+  border-left-color: #ff9f43;
+}
+.cost-model {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.78);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.auto-tag {
+  font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 7px;
+  background: rgba(255,159,67,0.18); color: #ff9f43; white-space: nowrap;
+}
+.cost-val {
+  font-size: 12px; font-weight: 700; color: #ffd93d;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.cost-empty {
+  font-size: 11px; color: rgba(255,255,255,0.3); padding: 8px 4px; text-align: center;
+}
+
+/* ===== CC (Claude Code) 模型用量卡片 ===== */
+.cc-card {
+  background: linear-gradient(135deg, rgba(108,206,176,0.07), rgba(108,179,255,0.03));
+  border: 1px solid rgba(108,206,176,0.18);
+}
+.cc-summary {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 2px 0 6px; font-size: 12px; color: rgba(255,255,255,0.72);
+  font-family: 'SF Mono','Consolas',monospace;
+}
+.cc-summary b { color: #6cceb0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cc-billing-note {
+  flex-basis: 100%; font-size: 9.5px; color: rgba(255,255,255,0.4);
+  font-family: -apple-system, system-ui, sans-serif; line-height: 1.35;
+}
+.cc-model-list {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.cc-row {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px;
+  padding: 5px 9px; border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  border-left: 2px solid rgba(108,206,176,0.45);
+  font-family: 'SF Mono','Consolas',monospace;
+}
+.cc-model {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.cc-tok {
+  font-size: 11px; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;
+}
+.cc-cost {
+  font-size: 12px; font-weight: 700; color: #6cceb0; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cc-unverified {
+  font-size: 9px; font-weight: 700; color: #ffd93d; cursor: help;
+  border: 1px solid rgba(255,217,61,0.4); border-radius: 5px; padding: 0 3px;
+}
+
+/* ===== 调用明细 feed：远程徽标 / 路由标注 / 远程IO ===== */
+.call-row .remote-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 9px; font-weight: 600; padding: 0 5px; border-radius: 6px;
+  background: rgba(255,159,67,0.18); color: #ff9f43; margin-left: 6px;
+}
+.call-row.remote { background: rgba(255,159,67,0.05); }
+.call-row.remote.latest { background: rgba(255,159,67,0.09); }
+.call-row .call-route {
+  font-size: 10px; color: rgba(255,255,255,0.45); font-weight: 400;
+}
+.call-row .call-io.remote-io {
+  color: #ff9f43; font-size: 10px; font-style: italic;
+}
+
+/* ===== CC Switch 调用行（统一 feed 内）===== */
+.call-row.cc-call { background: rgba(108,206,176,0.04); border-left: 2px solid rgba(108,206,176,0.3); }
+.call-row.cc-call.latest { background: rgba(108,206,176,0.08); }
+.call-row .cc-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 6px;
+  background: rgba(108,206,176,0.18); color: #6cceb0; margin-left: 6px;
+  letter-spacing: 0.5px;
+}
+.call-row .cc-model-name { color: #6cceb0 !important; }
+.live-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #6cceb0; animation: liveBlink 1.5s ease-in-out infinite;
+  margin-right: 4px; vertical-align: middle;
+}
+@keyframes liveBlink { 0%,100%{opacity:1} 50%{opacity:0.3} }

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WB Monitor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="ball-mode" class="ball-container">
+    <!-- 悬浮球 -->
+    <div class="ball" id="drag-ball">
+      <div class="ball-icon">📊</div>
+      <div class="ball-pulse"></div>
+    </div>
+
+    <!-- 展开面板（默认可见，启动即展示完整界面） -->
+    <div id="panel" class="panel">
+      <div class="panel-header">
+        <span class="panel-title"><span class="live-dot"></span>WB Monitor<span class="source-tag">JSONL+DB</span></span>
+        <span id="remote-count" class="remote-count" title="来自 workbuddy.db 的远程/auto 调用（Claude/GPT 等）">0 远程</span>
+        <span id="debug-status" style="font-size:10px;color:rgba(255,217,61,0.7);margin-right:8px">初始化中...</span>
+        <button id="btn-refresh" class="panel-btn" title="立即刷新 Token 数据">⟳</button>
+        <button id="btn-close-panel" class="panel-btn">×</button>
+      </div>
+
+      <div class="panel-body">
+        <!-- 网速 -->
+        <div class="metric-card">
+          <div class="metric-label">📶 网速</div>
+          <div class="metric-row">
+            <span class="metric-value upload-color" id="net-upload">↑ 0 KB/s</span>
+            <span class="metric-value download-color" id="net-download">↓ 0 KB/s</span>
+          </div>
+        </div>
+
+        <!-- FPS -->
+        <div class="metric-card">
+          <div class="metric-label">🎮 帧率</div>
+          <div class="metric-row">
+            <span class="metric-value fps-value status-ok" id="fps-value">60 FPS</span>
+            <div class="metric-fps-bar" id="fps-bar"></div>
+          </div>
+        </div>
+
+        <!-- 实时调用明细（cc switch 风格：每条一行，最新在最上）-->
+        <div class="metric-card feed-card">
+          <div class="metric-label">🧾 实时调用明细</div>
+          <!-- 最显眼：当前模型 + 花费（用户要求最先显示）-->
+          <div class="model-headline">
+            <div class="model-name" id="model-name">—</div>
+            <div class="model-cost" id="model-cost">本次 <b>¥0.00</b> · 累计 <b>¥0.00</b></div>
+          </div>
+          <!-- 实时速率仪表（类比网速：持续跳动）-->
+          <div class="model-live">
+            <div class="model-rate" id="model-rate">↑ 0 ↓ 0 · 0 次/min</div>
+            <div class="model-status" id="model-status">测量中…</div>
+          </div>
+          <div id="calls-feed" class="calls-feed">
+            <div class="token-subitem">读取中...</div>
+          </div>
+        </div>
+
+        <!-- 各模型成本（含 Claude/GPT，记在 auto 路由下；数据源 = workbuddy.db）-->
+        <div class="metric-card cost-card">
+          <div class="metric-label">💰 各模型成本<span class="label-hint">含远程 Claude/GPT</span></div>
+          <div id="model-cost-list" class="model-cost-list">
+            <div class="cost-empty">读取中...</div>
+          </div>
+        </div>
+
+        <!-- CC (Claude Code) 模型用量：扫描 ~/.claude/projects 逐消息真源 -->
+        <div class="metric-card cc-card">
+          <div class="metric-label">🖥️ CC 模型用量<span class="label-hint">Claude Code</span></div>
+          <div class="cc-summary" id="cc-summary">
+            <span><b id="cc-total-tokens">0</b> tok</span>
+            <span>≈$<b id="cc-total-cost">0.00</b></span>
+            <span id="cc-billing-note" class="cc-billing-note">—</span>
+          </div>
+          <div id="cc-model-list" class="cc-model-list">
+            <div class="cost-empty">读取中...</div>
+          </div>
+        </div>
+
+        <!-- 紧凑汇总（最后统计）-->
+        <div class="metric-card summary-card compact">
+          <div class="summary-row">
+            <span class="sum-cell"><span id="sum-today-calls">0</span><small id="sum-lbl-calls">本次调用</small></span>
+            <span class="sum-cell"><span id="sum-today-tokens">0</span><small id="sum-lbl-tokens">本次Token</small></span>
+            <span class="sum-cell"><span id="sum-today-cost" style="color:#6cceb0">≈¥0</span><small id="sum-lbl-cost">本次¥</small></span>
+            <span class="sum-cell"><span id="sum-total-cost" style="color:#ffd93d">¥0</span><small id="sum-lbl-total">累计¥</small></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-footer">
+        <button id="btn-pin" class="footer-btn active" title="锁定位置（拖拽时临时解锁）">📌</button>
+        <button id="btn-topmost" class="footer-btn active" title="窗口置顶">⬆️</button>
+        <button id="btn-penetration" class="footer-btn" title="鼠标穿透（只看不动，快捷键 Ctrl+Shift+M）">👁</button>
+        <button id="btn-view" class="footer-btn active" title="当前：只看本次启动后的消耗（点击看累计）">⏱本次</button>
+        <button id="btn-quit" class="footer-btn" title="退出程序">⏻</button>
+        <span class="footer-info"><span id="last-update">--</span> · v8 · JSONL+DB</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

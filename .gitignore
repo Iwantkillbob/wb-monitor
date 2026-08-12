@@ -1,0 +1,40 @@
+# WB Monitor — Git 忽略规则
+
+# 依赖（npm install 重新安装）
+node_modules/
+
+# 构建产物
+dist/
+out/
+
+# 运行时日志
+boot.log
+crash.log
+debug.log
+renderer-diag.log
+
+# 开发草稿 / 测试文件
+test-*.js
+probe-*.js
+scan-*.js
+extract-*.js
+preview.html
+test.html
+
+# npm 缓存
+.npm-cache/
+
+# OS 文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Electron 构建
+*.exe
