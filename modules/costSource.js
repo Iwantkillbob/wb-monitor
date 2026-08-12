@@ -36,8 +36,28 @@ function getDbPath() {
 
 async function ensureSql() {
   if (!_SQL) {
-    const wasmPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
-    _SQL = await initSqlJs({ locateFile: () => wasmPath });
+    // 尝试多条路径（开发模式 / asar 打包 / portable 解包）：
+    // 1. 开发环境：__dirname 相对于 modules/，wasm 在 ../node_modules/sql.js/dist/
+    // 2. electron-builder 打包后（asar: false）：resources/app/node_modules/sql.js/dist/
+    // 3. asar 模式：wasm 无法从 asar 内加载，需从 resources/ 提取
+    const candidates = [
+      path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+      path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+      // 打包后 resourcesPath 下（electron-builder 默认把 node_modules 放这里）
+      (process.resourcesPath && path.join(process.resourcesPath, 'app', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')),
+    ].filter(Boolean);
+
+    let wasmPath = null;
+    for (const p of candidates) {
+      if (fs.existsSync(p)) { wasmPath = p; break; }
+    }
+
+    if (!wasmPath) {
+      // 最后回退：让 sql.js 自己找（它会尝试内置路径）
+      _SQL = await initSqlJs();
+    } else {
+      _SQL = await initSqlJs({ locateFile: () => wasmPath });
+    }
   }
   return _SQL;
 }

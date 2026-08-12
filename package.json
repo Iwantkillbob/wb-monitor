@@ -1,1 +1,81 @@
-{"name": "wb-monitor", "version": "1.1.0", "description": "WorkBuddy 桌面悬浮球监控 — 实时网速 / 帧率 / Token 消耗 / 模型调用明细（三路数据源：本地 JSONL + workbuddy.db + CC Switch）", "main": "main.js", "author": "jarves", "license": "MIT", "scripts": {"start": "electron .", "start:clean": "node scripts/start-clean.js", "dev": "electron . --dev", "diag": "node scripts/diag.js"}, "dependencies": {"sql.js": "^1.14.1"}, "devDependencies": {"electron": "^32.0.0"}, "build": {"appId": "com.wbmonitor.app", "productName": "WB Monitor", "copyright": "Copyright © 2026 jarves", "directories": {"output": "dist"}, "files": ["main.js", "preload.js", "index.html", "styles.css", "renderer.js", "modules/**/*", "config.json", "scripts/**/*"], "win": {"target": "portable", "artifactName": "WB-Monitor-${version}-portable.exe"}}}
+{
+  "name": "wb-monitor",
+  "version": "1.1.0",
+  "description": "WorkBuddy Desktop Monitor",
+  "main": "main.js",
+  "author": "jarves",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "start:clean": "node scripts/start-clean.js",
+    "dev": "electron . --dev",
+    "diag": "node scripts/diag.js",
+    "build:win": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.wbmonitor.app",
+    "productName": "WB Monitor",
+    "copyright": "Copyright 2026 jarves",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "styles.css",
+      "renderer.js",
+      "modules/**/*",
+      "config.json",
+      "scripts/**/*",
+      "start.bat",
+      ".npmrc",
+      "node_modules/sql.js/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "config.json",
+        "to": "config.json"
+      },
+      {
+        "from": "start.bat",
+        "to": "start.bat"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WB Monitor",
+      "uninstallDisplayName": "WB Monitor"
+    }
+  }
+}
