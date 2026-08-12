@@ -134,12 +134,16 @@ async function readSessionFile(filePath) {
         // cache 字段可能缺失
         const cacheCreation = u.cache_creation_input_tokens || 0;
         const cacheRead = u.cache_read_input_tokens || 0;
+        // 跳过占位/纯缓存写入消息：真实一次生成必有 input>0 或 output>0，
+        // 否则是 CC Switch 重写的空 usage 桩（如 deepseek-v4-pro|0|0 出现数千次），会严重虚增计数。
+        if (input === 0 && output === 0) continue;
         const total = input + output + cacheCreation + cacheRead;
         if (total <= 0) continue; // 跳过无 token 的占位消息
         const ts = d.timestamp ? Date.parse(d.timestamp) : 0;
         calls.push({
           ts,
           model: msg.model,
+          messageId: d.id || msg.id || null, // 顶层 id 或 message.id，用于跨文件/同文件去重
           inputTokens: input,
           outputTokens: output,
           cacheCreation,
@@ -176,6 +180,26 @@ function readClaudeJsonReportedUSD() {
   } catch { return null; }
 }
 
+// 去重键：优先用 messageId（同一调用在多处/多次重写时 id 不变）；
+// 无 id 时退化为「秒级时间戳 + 模型 + token 签名」，合并同一次生成的微秒级重复写入。
+function callKey(c) {
+  if (c.messageId) return 'mid:' + c.messageId + '|' + c.model + '|' + c.inputTokens + '|' + c.outputTokens;
+  return 't:' + Math.floor((c.ts || 0) / 1000) + '|' + c.model + '|' + c.inputTokens + '|' + c.outputTokens + '|' + c.cacheCreation + '|' + c.cacheRead;
+}
+
+// 对采集到的调用列表去重（去除 CC Switch 同文件 38 遍重写 / 跨文件副本）
+function dedupeCalls(list) {
+  const seen = new Set();
+  const out = [];
+  for (const e of list) {
+    const k = callKey(e);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out;
+}
+
 async function fetchCCAggregateAsync() {
   const files = await listAllSessionFiles();
   const all = [];
@@ -186,7 +210,8 @@ async function fetchCCAggregateAsync() {
   for (const fp of Object.keys(_fileCache)) {
     if (!files.includes(fp)) delete _fileCache[fp];
   }
-  if (!all.length) {
+  const entries = dedupeCalls(all); // 去重后再聚合，避免占位桩与重写副本虚增计数
+  if (!entries.length) {
     return {
       byModel: [], total: { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0, costEstimated: false },
       today: { calls: 0, totalTokens: 0, cost: 0 },
@@ -203,7 +228,7 @@ async function fetchCCAggregateAsync() {
   let tdCalls = 0, tdTok = 0, tdCost = 0;
   let unpricedModels = 0;
 
-  for (const e of all) {
+  for (const e of entries) {
     tIn += e.inputTokens; tOut += e.outputTokens; tTot += e.totalTokens;
     const p = priceFor(e.model);
     const cost = costOfCall(p, e.inputTokens, e.outputTokens, e.cacheCreation, e.cacheRead);
@@ -232,7 +257,7 @@ async function fetchCCAggregateAsync() {
 
   return {
     byModel: byModelArr,
-    total: { calls: all.length, inputTokens: tIn, outputTokens: tOut, totalTokens: tTot, cost: tCost, costEstimated: tCostEstimated },
+    total: { calls: entries.length, inputTokens: tIn, outputTokens: tOut, totalTokens: tTot, cost: tCost, costEstimated: tCostEstimated },
     today: { calls: tdCalls, totalTokens: tdTok, cost: tdCost },
     sessions: files.length,
     projects: new Set(files.map(f => path.basename(path.dirname(f)))).size,
@@ -274,9 +299,11 @@ async function fetchRecentCCCallsAsync(limit) {
       });
     }
   }
+  // 去重（同文件 38 遍重写 / 跨文件副本）→ 合并成真实调用
+  const deduped = dedupeCalls(all);
   // 按时间倒序，截取最近 N 条
-  all.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  return all.slice(0, limit);
+  deduped.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return deduped.slice(0, limit);
 }
 
 module.exports = { fetchCCAggregateAsync, fetchRecentCCCallsAsync, getProjectsDir, PRICE_TABLE, priceFor };
