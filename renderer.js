@@ -15,6 +15,8 @@
     modelCostList: $('model-cost-list'),
     ccTotalTokens: $('cc-total-tokens'), ccTotalCost: $('cc-total-cost'),
     ccBillingNote: $('cc-billing-note'), ccModelList: $('cc-model-list'),
+    dshTotalCalls: $('dsh-total-calls'), dshTotalTokens: $('dsh-total-tokens'),
+    dshTotalCache: $('dsh-total-cache'), dshModelList: $('dsh-model-list'),
     sumTodayCalls: $('sum-today-calls'), sumTodayTokens: $('sum-today-tokens'),
     sumTodayCost: $('sum-today-cost'), sumTotalCost: $('sum-total-cost'),
     sumLblCalls: $('sum-lbl-calls'), sumLblTokens: $('sum-lbl-tokens'),
@@ -28,7 +30,7 @@
     btnView: $('btn-view')
   };
 
-  const APP_VERSION = 'v8-allmodels';
+  const APP_VERSION = 'v1.1.2-dsh';
 
   // 视图模式：'since' = 只看本次启动后的消耗（默认）；'all' = 累计全量
   let viewMode = 'since';
@@ -142,6 +144,7 @@
       const dur = c.durationStr || '—';
       const isRemote = !!c.fromRemote;
       const isCC = !!c.fromCC;  // CC Switch 调用（有真实 token 明细）
+      const isDsh = !!c.fromDsh; // DSH (DeepSeek Harness) 调用（真实模型名 + token）
       // 三路数据源样式区分：
       //   本地(tokenSource) → 模型名 + route · token I/O
       //   远程(costSource auto) → auto · 远程徽标 + 成本计费
@@ -156,6 +159,11 @@
           (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
         ioText = '<span class="call-io"><span class="in">' + fmt(c.inputTokens) + '</span> / <span class="out">' + fmt(c.outputTokens) + '</span> tok</span>';
         rowClass = ' cc-call';
+      } else if (isDsh) {
+        modelLabel = '<span class="call-model dsh-model-name">' + (c.model || '--') + '</span><span class="dsh-badge">DSH</span>' +
+          (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
+        ioText = '<span class="call-io"><span class="in">' + fmt(c.inputTokens) + '</span> / <span class="out">' + fmt(c.outputTokens) + '</span> tok</span>';
+        rowClass = ' dsh-call';
       } else {
         modelLabel = '<span class="call-model">' + (c.model || '--') + '</span>' + (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
         ioText = '<span class="call-io"><span class="in">' + fmt(c.inputTokens) + '</span> / <span class="out">' + fmt(c.outputTokens) + '</span> tok</span>';
@@ -274,6 +282,34 @@
     els.ccModelList.innerHTML = rows.join('');
   }
 
+  // ===== 渲染：DSH (DeepSeek Harness) 模型用量（真实模型名，zstd 日志逐调用 token）=====
+  function renderDSH(dsh) {
+    if (!dsh) return;
+    const t = dsh.total || { calls: 0, totalTokens: 0, cachedTokens: 0 };
+    if (els.dshTotalCalls) els.dshTotalCalls.textContent = fmt(t.calls || 0);
+    if (els.dshTotalTokens) els.dshTotalTokens.textContent = fmtK(t.totalTokens || 0);
+    if (els.dshTotalCache) els.dshTotalCache.textContent = '缓存 ' + fmtK(t.cachedTokens || 0);
+    if (!els.dshModelList) return;
+    const list = dsh.byModel || [];
+    if (!list.length) {
+      els.dshModelList.innerHTML = '<div class="cost-empty">暂无 DSH 调用记录</div>';
+      return;
+    }
+    const rows = list.map(m => {
+      const prov = (m.providerLabels && m.providerLabels.length) ? m.providerLabels.join('/') : (m.provider || '');
+      return (
+        '<div class="dsh-row">' +
+          '<span class="dsh-model">' + (m.model || 'unknown') +
+            (prov ? '<span class="dsh-prov">' + prov + '</span>' : '') +
+          '</span>' +
+          '<span class="dsh-calls">' + (m.calls || 0) + '次</span>' +
+          '<span class="dsh-tok">' + fmtK(m.totalTokens) + ' tok</span>' +
+        '</div>'
+      );
+    });
+    els.dshModelList.innerHTML = rows.join('');
+  }
+
   // 本机 harness 发现清单
   function renderHarnesses(list) {
     if (!els.harnessList) return;
@@ -317,6 +353,7 @@
     renderModelRate(d.modelRate);
     renderSummary(d, scope);
     renderCC(d.cc);
+    renderDSH(d.dsh);
     renderHarnessToken(d.harnessToken && d.harnessToken.byModel);
   }
 

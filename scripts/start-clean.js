@@ -2,8 +2,31 @@
  * 干净启动 WB Monitor —— 先列出/清掉会干扰 electron 的环境变量，再 fork electron。
  * 针对"npm start 一闪而过"类问题。运行: `npm run start:clean`
  */
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+/**
+ * 启动前清理：解决“重启没用 / 双击 start.bat 仍显示旧数据”的根因。
+ * 1) 删掉陈旧的 Electron 单实例锁文件（%~APPDATA%/wb-monitor/lockfile）。
+ *    进程崩溃/被杀后这个 0 字节文件可能残留，导致新实例误以为“另一个实例在运行”而直接退出。
+ * 2) 终止任何遗留的「打包版 WB Monitor.exe」（来自 wb-monitor-output/win-unpacked 的旧构建，
+ *    含旧 bug、无 dsh 功能），避免它一直占着锁、用旧代码顶掉源码版。
+ */
+function preLaunchCleanup() {
+  // 1) 删除陈旧锁文件
+  const lockPath = path.join(os.homedir(), 'AppData', 'Roaming', 'wb-monitor', 'lockfile');
+  try { if (fs.existsSync(lockPath)) { fs.unlinkSync(lockPath); console.log('[clean-start] 已删除陈旧单实例锁文件'); } }
+  catch (e) { /* 忽略 */ }
+
+  // 2) 终止遗留的打包版 WB Monitor.exe（按进程名 + 命令行匹配，不误杀其它 electron 应用）
+  try {
+    const ps = 'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'WB Monitor.exe\'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -like \'*wb-monitor-output*win-unpacked*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"';
+    execSync(ps, { stdio: 'ignore', windowsHide: true });
+    console.log('[clean-start] 已尝试清理遗留的打包版 WB Monitor 进程');
+  } catch (e) { /* 无遗留进程或权限不足，忽略 */ }
+}
 
 const KNOWN_BAD = ['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'ELECTRON_ENABLE_LOGGING_FILE', 'SENTRY_DSN'];
 const AUDIT = known => {
@@ -18,6 +41,9 @@ const AUDIT = known => {
 };
 const bad = AUDIT(KNOWN_BAD);
 bad.forEach(k => { delete process.env[k]; });
+
+// 启动前清理：删锁文件 + 杀遗留打包版进程（根治“重启没用”）
+preLaunchCleanup();
 
 // 找到 electron 可执行：node_modules/.bin/electron（Windows 下可能是个 .cmd/.ps1，需跨平台）
 const electronBin = require('electron');

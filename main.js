@@ -117,6 +117,8 @@ const costSource = require('./modules/costSource');
 // ===== CC (Claude Code fork) 数据源：扫描 ~/.claude/projects，逐消息聚合模型+token+费用 =====
 const ccSource = require('./modules/cc-source');
 const harnessSource = require('./modules/harness-source');
+// ===== DSH (DeepSeek Harness) 数据源：扫描 ~/.dsh/sessions，解析 zstd 压缩 JSONL 的真实模型+token =====
+const dshSource = require('./modules/dshSource');
 bootLog('2', 'modules loaded: tokenSource=ok costSource=ok ccSource=ok');
 
 // ===== 进程级异常兜底：任何未捕获异常/拒绝都写日志，避免直接闪退 =====
@@ -258,12 +260,14 @@ async function getCachedModelRate(cost) {
 async function buildFullPayload() {
   if (_building) return _building;
   _building = (async () => {
-    const [aggregate, recent, cost, cc, ccRecent] = await Promise.all([
+    const [aggregate, recent, cost, cc, ccRecent, dsh, dshRecent] = await Promise.all([
       tokenSource.fetchTokenAggregateAsync(),
       tokenSource.fetchRecentCallsAsync(60),
       costSource.fetchCostAggregateAsync(),
       ccSource.fetchCCAggregateAsync(), // CC fork：~/.claude/projects 聚合
-      ccSource.fetchRecentCCCallsAsync(60) // CC fork：最近 60 条逐调用明细（合并进统一 feed）
+      ccSource.fetchRecentCCCallsAsync(60), // CC fork：最近 60 条逐调用明细（合并进统一 feed）
+      dshSource.fetchDshAggregateAsync(), // DSH：~/.dsh/sessions 聚合（zstd JSONL，真实模型名）
+      dshSource.fetchRecentDshCallsAsync(60) // DSH：最近 60 条逐调用明细（合并进统一 feed）
     ]);
     const modelRate = await getCachedModelRate(cost); // ¥/token 单价：仅每 30s 全量推算一次
     const dbCalls = (cost && cost.dbCalls) || [];
@@ -330,10 +334,10 @@ async function buildFullPayload() {
         };
       });
 
-    // 3) 合并三路数据源为统一时间线：本地(tokenSource) + 远程(costSource auto) + CC Switch(ccSource)
-    //    按时间倒序，截断 80 条（给 CC 调用留足够展示空间）
-    const merged = localMerged.slice(0, 50).concat(remoteMerged).concat(ccRecent || [])
-      .sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 80);
+    // 3) 合并三路数据源为统一时间线：本地(tokenSource) + 远程(costSource auto) + CC Switch(ccSource) + DSH(dshSource)
+    //    按时间倒序，截断 90 条（给各源调用留足够展示空间）
+    const merged = localMerged.slice(0, 50).concat(remoteMerged).concat(ccRecent || []).concat(dshRecent || [])
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 90);
 
     // 4) 本次启动后的消耗：基线 = 首次构建时最新一条调用的 ts，只统计比它新的调用
     if (BASELINE_TS === null) BASELINE_TS = (merged[0] && merged[0].ts) || Date.now();
@@ -366,9 +370,11 @@ async function buildFullPayload() {
       costToday: cost ? cost.todayCost : 0,
       costByModel: cost ? cost.byModel : [],
       cc, // CC (Claude Code fork) 模型/token/费用聚合
+      dsh, // DSH (DeepSeek Harness) 模型/token 聚合（真实模型名，zstd 日志）
       harnessToken: { byModel: harnessSource.mergeTokenByModel([
         { harness: 'workbuddy', models: (aggregate && aggregate.byModel) || [] },
-        { harness: 'claude', models: (cc && cc.byModel) || [] }
+        { harness: 'claude', models: (cc && cc.byModel) || [] },
+        { harness: 'dsh', models: (dsh && dsh.byModel) || [] }
       ]) },
       since: {
         calls: sinceCalls.length,

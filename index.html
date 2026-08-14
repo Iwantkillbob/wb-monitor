@@ -82,6 +82,19 @@
           </div>
         </div>
 
+        <!-- DSH (DeepSeek Harness) 模型用量：扫描 ~/.dsh/sessions，真实模型名，逐调用 token -->
+        <div class="metric-card dsh-card">
+          <div class="metric-label">🔷 DSH 模型用量<span class="label-hint">DeepSeek Harness</span></div>
+          <div class="dsh-summary" id="dsh-summary">
+            <span><b id="dsh-total-calls">0</b> 次</span>
+            <span><b id="dsh-total-tokens">0</b> tok</span>
+            <span id="dsh-total-cache" class="dsh-cache-note">缓存 0</span>
+          </div>
+          <div id="dsh-model-list" class="dsh-model-list">
+            <div class="cost-empty">读取中...</div>
+          </div>
+        </div>
+
         <!-- 紧凑汇总（最后统计）-->
         <div class="metric-card summary-card compact">
           <div class="summary-row">
@@ -111,7 +124,7 @@
         <button id="btn-penetration" class="footer-btn" title="鼠标穿透（只看不动，快捷键 Ctrl+Shift+M）">👁</button>
         <button id="btn-view" class="footer-btn active" title="当前：只看本次启动后的消耗（点击看累计）">⏱本次</button>
         <button id="btn-quit" class="footer-btn" title="退出程序">⏻</button>
-        <span class="footer-info"><span id="last-update">--</span> · v8 · JSONL+DB</span>
+        <span class="footer-info"><span id="last-update">--</span> · v1.1.2 · JSONL+DB+DSH</span>
       </div>
     </div>
   </div>
