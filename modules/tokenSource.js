@@ -29,34 +29,42 @@ function getProjectsDir() {
   return path.join(os.homedir(), '.workbuddy', 'projects');
 }
 
+// 目录清单缓存：新会话最多 12s 内出现即可，避免每轮（1.5~5s）全量 readdir。
+// 返回 [{ path, mtimeMs }]，mtime 直接喂给 readSessionFile，省去逐文件再 stat。
+let _listCache = { ts: 0, files: null };
+const LIST_TTL = 12000;
 async function listAllSessionFiles() {
+  const now = Date.now();
+  if (_listCache.files && (now - _listCache.ts) < LIST_TTL) return _listCache.files;
   const PROJECTS_DIR = getProjectsDir();
-  try { await fsp.access(PROJECTS_DIR); } catch { return []; }
-  const result = [];
+  const files = [];
+  try { await fsp.access(PROJECTS_DIR); } catch { _listCache = { ts: now, files: [] }; return []; }
   let projects = [];
   try {
-    projects = (await fsp.readdir(PROJECTS_DIR)).filter(d => {
-      try { return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory(); } catch { return false; }
-    });
-  } catch { return []; }
+    projects = (await fsp.readdir(PROJECTS_DIR, { withFileTypes: true })).filter(e => e.isDirectory()).map(e => e.name);
+  } catch { _listCache = { ts: now, files: [] }; return []; }
   for (const proj of projects) {
     const dir = path.join(PROJECTS_DIR, proj);
-    let files = [];
-    try { files = await fsp.readdir(dir); } catch { continue; }
-    for (const f of files) {
-      if (f.endsWith('.jsonl')) result.push(path.join(dir, f));
+    let ents = [];
+    try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const e of ents) {
+      if (e.isFile() && e.name.endsWith('.jsonl')) {
+        const fp = path.join(dir, e.name);
+        try { const st = await fsp.stat(fp); files.push({ path: fp, mtimeMs: st.mtimeMs }); } catch {}
+      }
     }
   }
-  return result;
+  _listCache = { ts: now, files };
+  return files;
 }
 
 // 解析单个文件：产出 messages(全量轻量索引) + calls(assistant+rawUsage 每次调用)
 // 带 mtime 缓存；durationMs = 本次调用 ts − 同会话前一条消息 ts
-async function readSessionFile(filePath) {
+async function readSessionFile(filePath, knownMtime) {
   try {
-    const stat = await fsp.stat(filePath);
+    const mtimeMs = (knownMtime != null) ? knownMtime : (await fsp.stat(filePath)).mtimeMs;
     const cached = _fileCache[filePath];
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.calls;
+    if (cached && cached.mtimeMs === mtimeMs) return cached.calls;
 
     const content = await fsp.readFile(filePath, 'utf-8');
     const lines = content.split('\n').filter(l => l.trim());
@@ -126,12 +134,13 @@ async function fetchTokenAggregateAsync() {
   const files = await listAllSessionFiles();
   const all = [];
   for (const f of files) {
-    const c = await readSessionFile(f);
+    const c = await readSessionFile(f.path, f.mtimeMs);
     for (const item of c) all.push(item); // 循环 push，避免大文件 spread 栈溢出
   }
   // 清理已删文件的缓存
+  const paths = files.map(f => f.path);
   for (const fp of Object.keys(_fileCache)) {
-    if (!files.includes(fp)) delete _fileCache[fp];
+    if (!paths.includes(fp)) delete _fileCache[fp];
   }
   return buildAggregate(all);
 }
@@ -141,11 +150,12 @@ async function fetchRecentCallsAsync(limit = 40) {
   const files = await listAllSessionFiles();
   const all = [];
   for (const f of files) {
-    const c = await readSessionFile(f);
+    const c = await readSessionFile(f.path, f.mtimeMs);
     for (const item of c) all.push(item);
   }
+  const paths = files.map(f => f.path);
   for (const fp of Object.keys(_fileCache)) {
-    if (!files.includes(fp)) delete _fileCache[fp];
+    if (!paths.includes(fp)) delete _fileCache[fp];
   }
   all.sort((a, b) => b.ts - a.ts);
   return all.slice(0, limit);

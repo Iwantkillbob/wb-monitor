@@ -32,6 +32,7 @@ const HARNESS_DEFS = [
 ];
 
 // 递归统计目录下的 json/jsonl 数量与总字节（用于「本机有哪些 harness + 数据量」展示）
+// 原实现用 fs.statSync 同步递归，阻塞主进程；改为异步 fsp.stat。
 async function _scan(dir) {
   let jsonl = 0, bytes = 0;
   try { await fsp.access(dir); } catch { return { exists: false, jsonl: 0, bytes: 0 }; }
@@ -41,7 +42,7 @@ async function _scan(dir) {
     for (const n of entries) {
       const fp = path.join(d, n);
       try {
-        const st = fs.statSync(fp);
+        const st = await fsp.stat(fp);
         if (st.isDirectory()) await walk(fp);
         else if (n.endsWith('.jsonl') || n.endsWith('.json')) { jsonl++; bytes += st.size; }
       } catch {}
@@ -52,7 +53,12 @@ async function _scan(dir) {
 }
 
 // 发现本机所有已知 harness 的安装/数据情况
+// 缓存 60s：harness 安装/卸载极罕见，无需每 30s（renderer 轮询）都递归大盘点。
+let _harnessCache = { at: 0, list: null };
+const HARNESS_TTL = 60000;
 async function detectHarnesses() {
+  const now = Date.now();
+  if (_harnessCache.list && (now - _harnessCache.at) < HARNESS_TTL) return _harnessCache.list;
   const out = [];
   for (const h of HARNESS_DEFS) {
     const s = await _scan(h.dir());
@@ -67,6 +73,7 @@ async function detectHarnesses() {
       dataDir: h.dir()
     });
   }
+  _harnessCache = { at: now, list: out };
   return out;
 }
 

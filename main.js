@@ -91,7 +91,7 @@ function _configCandidates() {
   return out;
 }
 let CONFIG = {
-  refresh: { tokenMs: 1500 }, // 1.5s：贴近"实时"。本地 JSONL 读带 mtime 缓存，几乎零成本
+  refresh: { tokenMs: 5000 }, // 5s：24h 常驻监控足够"实时"；目录清单/文件均有 mtime 缓存，IO 已大幅降低
   window: { panelSize: { w: 340, h: 600 }, ballSize: 56 }
 };
 
@@ -224,42 +224,51 @@ let _building = null;
 // 本次启动基线：首次构建时记录「当时最新一条调用的 ts」，之后只统计 ts 比它新的调用
 // = 真正的「本次启动后的消耗」。稳定不变（只在第一次 build 时赋值一次）。
 let BASELINE_TS = null;
+
+// ¥/token 单价缓存：由「已计费会话」全量推算（总成本/总 token），单价变化极慢，
+// 仅每 30s 重算一次，避免每轮（5s）都全量扫描所有 WorkBuddy JSONL 反推单价。
+let _modelRateCache = { at: 0, map: {} };
+async function getCachedModelRate(cost) {
+  const now = Date.now();
+  if (_modelRateCache.map && (now - _modelRateCache.at) < 30000 && Object.keys(_modelRateCache.map).length) return _modelRateCache.map;
+  const allRecent = await tokenSource.fetchRecentCallsAsync(999999); // 全量，仅在 30s 窗口内跑一次
+  const sessionCostMap = (cost && cost.sessionCostMap) || {};
+  const groups = {};
+  for (const c of allRecent) {
+    const sid = c.fileSessionId || '__unknown__';
+    (groups[sid] = groups[sid] || []).push(c);
+  }
+  const modelRateAcc = {}; // model -> { cost, tok }
+  for (const sid in groups) {
+    const sessCost = sessionCostMap[sid] || 0;
+    if (sessCost <= 0) continue;
+    const grp = groups[sid];
+    const totTok = grp.reduce((s, c) => s + (c.totalTokens || 0), 0) || 0;
+    const m = grp[0].model;
+    if (!modelRateAcc[m]) modelRateAcc[m] = { cost: 0, tok: 0 };
+    modelRateAcc[m].cost += sessCost; modelRateAcc[m].tok += totTok;
+  }
+  const map = {};
+  for (const m in modelRateAcc) map[m] = modelRateAcc[m].tok > 0 ? modelRateAcc[m].cost / modelRateAcc[m].tok : 0;
+  _modelRateCache = { at: now, map };
+  return map;
+}
+
 async function buildFullPayload() {
   if (_building) return _building;
   _building = (async () => {
-    const [aggregate, recent, allRecent, cost, cc, ccRecent] = await Promise.all([
+    const [aggregate, recent, cost, cc, ccRecent] = await Promise.all([
       tokenSource.fetchTokenAggregateAsync(),
       tokenSource.fetchRecentCallsAsync(60),
-      tokenSource.fetchRecentCallsAsync(999999), // 全量：由「已计费会话」反推单价（文件级缓存，二次几乎零成本）
       costSource.fetchCostAggregateAsync(),
       ccSource.fetchCCAggregateAsync(), // CC fork：~/.claude/projects 聚合
       ccSource.fetchRecentCCCallsAsync(60) // CC fork：最近 60 条逐调用明细（合并进统一 feed）
     ]);
-    const sessionCostMap = (cost && cost.sessionCostMap) || {};
+    const modelRate = await getCachedModelRate(cost); // ¥/token 单价：仅每 30s 全量推算一次
     const dbCalls = (cost && cost.dbCalls) || [];
 
-    // 1) 由「已计费会话」推导各模型有效 ¥/token 估算率，用于给实时（含尚未计费的）调用估算成本。
-    //    为什么这样做：本地 JSONL 没有逐调用成本；db 的 credit_json 是另一个 id 空间无法逐调用 join，
-    //    且当前正在跑的会话往往还没写进 db（延迟计费）。用历史已计费会话的「总成本/总 token」反推
-    //    每 token 单价，再乘实时 token 数，得到一个有真实账单背书的「实时估算 ¥」。
-    //    注：用全量调用(allRecent)而非最近 60 条——最近 60 条多来自尚未计费的活跃会话，取不到样本会退化成 0。
-    const groups = {};
-    for (const c of allRecent) {
-      const sid = c.fileSessionId || '__unknown__';
-      (groups[sid] = groups[sid] || []).push(c);
-    }
-    const modelRateAcc = {}; // model -> { cost, tok }
-    for (const sid in groups) {
-      const sessCost = sessionCostMap[sid] || 0;
-      if (sessCost <= 0) continue;
-      const grp = groups[sid];
-      const totTok = grp.reduce((s, c) => s + (c.totalTokens || 0), 0) || 0;
-      const m = grp[0].model;
-      if (!modelRateAcc[m]) modelRateAcc[m] = { cost: 0, tok: 0 };
-      modelRateAcc[m].cost += sessCost; modelRateAcc[m].tok += totTok;
-    }
-    const modelRate = {}; // model -> ¥/token
-    for (const m in modelRateAcc) modelRate[m] = modelRateAcc[m].tok > 0 ? modelRateAcc[m].cost / modelRateAcc[m].tok : 0;
+    // 1) 各模型有效 ¥/token 估算率（modelRate）由 getCachedModelRate 每 30s 全量推算一次，
+    //    已在上方 const modelRate = await getCachedModelRate(cost) 取得，无需每轮全量扫描所有 JSONL。
 
     // 1.5) 本地调用：cost = totalTokens × 模型有效单价（实时估算，有历史账单背书）
     const sessionEstMap = {}; // 会话 -> 估算总成本（头条「本会话 ¥」）

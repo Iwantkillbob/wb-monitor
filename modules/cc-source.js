@@ -90,33 +90,43 @@ function getProjectsDir() {
   return path.join(os.homedir(), '.claude', 'projects');
 }
 
+// 递归目录清单缓存：原实现每次调用都用 fs.statSync 同步递归整棵 ~/.claude/projects
+// （含多层 agent 子目录），每轮都阻塞主进程。改为异步 fsp.stat + 12s TTL 缓存，
+// 返回 [{ path, mtimeMs }]，mtime 直接喂 readSessionFile，省去逐文件再 stat。
+let _listCache = { ts: 0, files: null };
+const LIST_TTL = 12000;
 async function listAllSessionFiles() {
   const DIR = getProjectsDir();
-  try { await fsp.access(DIR); } catch { return []; }
+  const now = Date.now();
+  if (_listCache.files && (now - _listCache.ts) < LIST_TTL) return _listCache.files;
+  try { await fsp.access(DIR); } catch { _listCache = { ts: now, files: [] }; return []; }
   // 递归遍历：cc fork 把 session 嵌套在多层子目录（工程/session/agent 等）
   const result = [];
   async function walk(dir) {
     let entries = [];
-    try { entries = await fsp.readdir(dir); } catch { return; }
-    for (const name of entries) {
-      const fp = path.join(dir, name);
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const fp = path.join(dir, e.name);
       try {
-        const st = fs.statSync(fp);
-        if (st.isDirectory()) await walk(fp);
-        else if (name.endsWith('.jsonl')) result.push(fp);
+        if (e.isDirectory()) await walk(fp);
+        else if (e.isFile() && e.name.endsWith('.jsonl')) {
+          const st = await fsp.stat(fp);
+          result.push({ path: fp, mtimeMs: st.mtimeMs });
+        }
       } catch {}
     }
   }
   await walk(DIR);
+  _listCache = { ts: now, files: result };
   return result;
 }
 
 // 解析单个文件为调用列表（带 mtime 缓存）
-async function readSessionFile(filePath) {
+async function readSessionFile(filePath, knownMtime) {
   try {
-    const stat = await fsp.stat(filePath);
+    const mtimeMs = (knownMtime != null) ? knownMtime : (await fsp.stat(filePath)).mtimeMs;
     const cached = _fileCache[filePath];
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.calls;
+    if (cached && cached.mtimeMs === mtimeMs) return cached.calls;
 
     const content = await fsp.readFile(filePath, 'utf-8');
     const lines = content.split('\n').filter(l => l.trim());
@@ -204,11 +214,12 @@ async function fetchCCAggregateAsync() {
   const files = await listAllSessionFiles();
   const all = [];
   for (const f of files) {
-    const c = await readSessionFile(f);
+    const c = await readSessionFile(f.path, f.mtimeMs);
     for (const item of c) all.push(item);
   }
+  const paths = files.map(f => f.path);
   for (const fp of Object.keys(_fileCache)) {
-    if (!files.includes(fp)) delete _fileCache[fp];
+    if (!paths.includes(fp)) delete _fileCache[fp];
   }
   const entries = dedupeCalls(all); // 去重后再聚合，避免占位桩与重写副本虚增计数
   if (!entries.length) {
@@ -272,7 +283,7 @@ async function fetchRecentCCCallsAsync(limit) {
   const files = await listAllSessionFiles();
   const all = [];
   for (const f of files) {
-    const calls = await readSessionFile(f);
+    const calls = await readSessionFile(f.path, f.mtimeMs);
     for (const c of calls) {
       const p = priceFor(c.model);
       const cost = costOfCall(p, c.inputTokens, c.outputTokens, c.cacheCreation, c.cacheRead);
