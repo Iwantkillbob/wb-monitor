@@ -162,7 +162,7 @@ async function readSessionFile(filePath, knownMtime) {
         });
       } catch {}
     }
-    _fileCache[filePath] = { mtimeMs: stat.mtimeMs, calls };
+    _fileCache[filePath] = { mtimeMs, calls };
     return calls;
   } catch { return []; }
 }
@@ -271,7 +271,7 @@ async function fetchCCAggregateAsync() {
     total: { calls: entries.length, inputTokens: tIn, outputTokens: tOut, totalTokens: tTot, cost: tCost, costEstimated: tCostEstimated },
     today: { calls: tdCalls, totalTokens: tdTok, cost: tdCost },
     sessions: files.length,
-    projects: new Set(files.map(f => path.basename(path.dirname(f)))).size,
+    projects: new Set(files.map(f => path.basename(path.dirname(f.path)))).size,
     billing: { ccLastSessionUSD, ourPricedUSD: tCost, unpricedModels, note }
   };
 }

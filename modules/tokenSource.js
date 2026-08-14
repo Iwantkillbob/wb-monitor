@@ -124,7 +124,7 @@ async function readSessionFile(filePath, knownMtime) {
       if (pos >= 0) c.durationMs = c.ts - messages[pos].ts;
     }
 
-    _fileCache[filePath] = { mtimeMs: stat.mtimeMs, messages, calls };
+    _fileCache[filePath] = { mtimeMs, messages, calls };
     return calls;
   } catch { return []; }
 }
