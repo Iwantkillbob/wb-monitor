@@ -609,3 +609,12 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); if (tray) { try { tray.destroy(); } catch {} } });
+
+// 已有实例收到重复启动请求：把悬浮球窗口拉到前台（不新建、不杀进程）
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
