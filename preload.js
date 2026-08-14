@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 数据
   getConfig: () => ipcRenderer.invoke('get-config'),
   getTokenData: () => ipcRenderer.invoke('get-token-data'),
+  getHarnesses: () => ipcRenderer.invoke('get-harnesses'),
   quitApp: () => ipcRenderer.invoke('quit-app'),
 
   // 监听主进程推送（token-update 现在包含：aggregate + recentCalls[逐调已合成本] + costTotal/costToday）

@@ -91,6 +91,18 @@
             <span class="sum-cell"><span id="sum-total-cost" style="color:#ffd93d">¥0</span><small id="sum-lbl-total">累计¥</small></span>
           </div>
         </div>
+
+        <!-- 本机 AI 工具（自动发现 + token 可用性标注）-->
+        <div class="metric-card harness-card">
+          <div class="metric-label">🛰️ 本机 AI 工具<span class="label-hint">自动发现</span></div>
+          <div id="harness-list" class="harness-list"></div>
+        </div>
+
+        <!-- 全部模型 Token（仅本地可统计的真实源合并）-->
+        <div class="metric-card harness-token-card">
+          <div class="metric-label">📊 全部模型 Token<span class="label-hint">本地可统计</span></div>
+          <div id="harness-token-list" class="harness-token-list"></div>
+        </div>
       </div>
 
       <div class="panel-footer">

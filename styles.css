@@ -441,3 +441,31 @@ body.mode-ball .ball-container {
   margin-right: 4px; vertical-align: middle;
 }
 @keyframes liveBlink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ===== 本机 AI 工具（harness 发现清单）===== */
+.harness-list { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.h-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 11px; padding: 4px 9px; border-radius: 8px;
+  background: rgba(255,255,255,0.03); border-left: 2px solid rgba(100,140,255,0.4);
+  font-family: 'SF Mono','Consolas',monospace;
+}
+.h-row-off { opacity: 0.4; border-left-color: rgba(255,255,255,0.12); }
+.h-name { color: rgba(255,255,255,0.82); font-weight: 600; flex-shrink: 0; }
+.h-meta { font-size: 9.5px; color: rgba(255,255,255,0.4); }
+.h-tok { font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 7px; margin-left: auto; white-space: nowrap; }
+.h-tok.ok { background: rgba(108,206,176,0.16); color: #6cceb0; }
+.h-tok.no { background: rgba(255,107,107,0.14); color: #ff8a8a; cursor: help; }
+.h-tok.off { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); }
+
+.harness-token-list { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.h-tok-row {
+  display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 8px;
+  background: rgba(255,255,255,0.03); border-left: 2px solid rgba(167,139,250,0.4);
+  font-family: 'SF Mono','Consolas',monospace; font-size: 11px;
+}
+.h-tok-model { color: rgba(167,139,250,0.9); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h-tok-tok { color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+.h-tok-cost { color: #ffd93d; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.h-tok-src { font-size: 9px; color: rgba(255,255,255,0.4); }

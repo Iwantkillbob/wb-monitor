@@ -20,6 +20,7 @@
     sumLblCalls: $('sum-lbl-calls'), sumLblTokens: $('sum-lbl-tokens'),
     sumLblCost: $('sum-lbl-cost'), sumLblTotal: $('sum-lbl-total'),
     remoteCount: $('remote-count'),
+    harnessList: $('harness-list'), harnessTokenList: $('harness-token-list'),
     debug: $('debug-status'), lastUpdate: $('last-update'),
     panel: $('panel'), ball: $('drag-ball'),
     btnClose: $('btn-close-panel'), btnPin: $('btn-pin'), btnRefresh: $('btn-refresh'),
@@ -273,6 +274,39 @@
     els.ccModelList.innerHTML = rows.join('');
   }
 
+  // 本机 harness 发现清单
+  function renderHarnesses(list) {
+    if (!els.harnessList) return;
+    if (!list || !list.length) { els.harnessList.innerHTML = '<div class="cost-empty">未发现</div>'; return; }
+    const rows = list.map(h => {
+      const sizeStr = h.sizeBytes > 0 ? (h.sizeBytes >= 1048576 ? (h.sizeBytes / 1048576).toFixed(0) + 'MB' : (h.sizeBytes / 1024).toFixed(0) + 'KB') : '';
+      const tokBadge = h.hasTokenData
+        ? '<span class="h-tok ok">✓ 可统计</span>'
+        : (h.detected ? '<span class="h-tok no" title="' + (h.note || '') + '">本地无 token 记录</span>' : '<span class="h-tok off">未安装</span>');
+      const det = h.detected ? ('<span class="h-meta">' + h.jsonlCount + ' 文件 · ' + sizeStr + '</span>') : '';
+      return '<div class="h-row' + (h.detected ? '' : ' h-row-off') + '">'
+        + '<span class="h-name">' + h.name + '</span>'
+        + det + tokBadge + '</div>';
+    });
+    els.harnessList.innerHTML = rows.join('');
+  }
+
+  // 全部模型 Token（本地可统计真实源合并）
+  function renderHarnessToken(byModel) {
+    if (!els.harnessTokenList) return;
+    if (!byModel || !byModel.length) { els.harnessTokenList.innerHTML = '<div class="cost-empty">暂无</div>'; return; }
+    const rows = byModel.map(m => {
+      const hs = (m.harnesses && m.harnesses.length) ? m.harnesses.map(x => x === 'claude' ? 'CC' : (x === 'workbuddy' ? 'WB' : x)).join('/') : '';
+      return '<div class="h-tok-row">'
+        + '<span class="h-tok-model">' + (m.model || 'unknown') + '</span>'
+        + '<span class="h-tok-tok">' + fmtK(m.totalTokens) + ' tok</span>'
+        + '<span class="h-tok-cost">$' + (m.cost || 0).toFixed(2) + '</span>'
+        + (hs ? '<span class="h-tok-src">' + hs + '</span>' : '')
+        + '</div>';
+    });
+    els.harnessTokenList.innerHTML = rows.join('');
+  }
+
   function renderView() {
     const d = lastPayload;
     if (!d) return;
@@ -283,6 +317,7 @@
     renderModelRate(d.modelRate);
     renderSummary(d, scope);
     renderCC(d.cc);
+    renderHarnessToken(d.harnessToken && d.harnessToken.byModel);
   }
 
   function renderPayload(d) {
@@ -420,6 +455,12 @@
 
     requestAnimationFrame(rafTick);
     startModelTimer();
+    // 本机 harness 发现（非关键，延迟拉取 + 定时刷新，避免阻塞首屏）
+    setTimeout(() => {
+      const pull = () => { try { window.electronAPI.getHarnesses().then(renderHarnesses).catch(() => {}); } catch {} };
+      pull();
+      setInterval(pull, 30000);
+    }, 1500);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

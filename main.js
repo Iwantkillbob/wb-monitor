@@ -3,7 +3,7 @@
  * 零原生依赖（去掉 systeminformation）
  * 所有数据读取异步，绝不阻塞 UI 线程
  */
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, Tray, nativeImage } = require('electron');
 // GPU 兼容（关键，避免打包后 exe 闪退）：
 //   开发模式靠 scripts/start-clean.js 传 CLI 参数；但「打包后的 exe」走 electron 默认启动，
 //   不会带那些参数 → 在无显卡环境（VM / 远程桌面 / 部分笔记本）必崩（GPU 子进程 fatal 退出，
@@ -26,7 +26,20 @@ const os = require('os');
 const { execFile } = require('child_process');
 
 // ===== 启动握手日志（写 stderr + 文件，方便排查 "npm start 一闪而过" 类问题）=====
-const _BOOT_LOG = path.join(__dirname, 'boot.log');
+// 打包后 __dirname 指向 resources/app，NSIS 默认装到 Program Files（只读），
+// 日志写不进去就等于没有排查手段。故打包态改写用户数据目录：
+//   %APPDATA%\WB Monitor\boot.log
+function _resolveBootLogPath() {
+  try {
+    if (app.isPackaged) {
+      const dir = app.getPath('userData'); // app.getPath 在 ready 之前即可用
+      try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+      return path.join(dir, 'boot.log');
+    }
+  } catch {}
+  return path.join(__dirname, 'boot.log');
+}
+const _BOOT_LOG = _resolveBootLogPath();
 try { fs.writeFileSync(_BOOT_LOG, ''); } catch {} // 每次启动清空旧日志
 function bootLog(stage, info) {
   const ts = new Date().toISOString();
@@ -40,21 +53,60 @@ let mainWindow;
 let isDev = process.argv.includes('--dev');
 let penetrationOn = false;
 
+// ===== 系统托盘（小托盘）：常驻通知区域，方便寻找与管理 =====
+const TRAY_ICON_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAbElEQVR42u3XwRGAIBAEwYmDIMw/BLPCBESgrIXV2se9p1/cQSlH3TkE8EkAZ70dKaAVfYtBEZ9BoIqPIlDGRxCo4z0EK+JPiABYFW8hAgjAD5B3wAKwfRlZrGOLg8TiJLM4Si3O8vyMfgu4ADVN9SpvZxXkAAAAAElFTkSuQmCC';
+let tray = null;
+function createTray() {
+  try {
+    const img = nativeImage.createFromDataURL('data:image/png;base64,' + TRAY_ICON_BASE64);
+    tray = new Tray(img);
+    tray.setToolTip('WB Monitor — AI API 用量实时监控');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: '显示窗口', click: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } } },
+      { type: 'separator' },
+      { label: '退出', click: () => app.quit() }
+    ]));
+    tray.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isVisible()) mainWindow.hide();
+      else { mainWindow.show(); mainWindow.focus(); }
+    });
+    bootLog('6', 'tray created');
+  } catch (e) {
+    _crashLog('createTray', e);
+    bootLog('6-FAIL', (e && e.message) || String(e));
+  }
+}
+
 // ===== 配置 =====
-const CONFIG_PATH = path.join(__dirname, 'config.json');
+// config.json 在三种形态下位置不同，按优先级依次探测：
+//   1) 用户数据目录  %APPDATA%\WB Monitor\config.json —— 允许用户改配置且不被升级覆盖
+//   2) resources 目录（extraResources 投放）—— 打包后的默认配置
+//   3) __dirname —— 开发模式
+function _configCandidates() {
+  const out = [];
+  try { if (app.isPackaged) out.push(path.join(app.getPath('userData'), 'config.json')); } catch {}
+  try { if (process.resourcesPath) out.push(path.join(process.resourcesPath, 'config.json')); } catch {}
+  out.push(path.join(__dirname, 'config.json'));
+  return out;
+}
 let CONFIG = {
   refresh: { tokenMs: 1500 }, // 1.5s：贴近"实时"。本地 JSONL 读带 mtime 缓存，几乎零成本
   window: { panelSize: { w: 340, h: 600 }, ballSize: 56 }
 };
 
 function loadConfig() {
-  try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+  for (const p of _configCandidates()) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
       if (raw.window) CONFIG.window = { ...CONFIG.window, ...raw.window };
       if (raw.refresh) CONFIG.refresh = { ...CONFIG.refresh, ...raw.refresh };
-    }
-  } catch {}
+      bootLog('3b', 'config from ' + p);
+      return;
+    } catch {}
+  }
+  bootLog('3b', 'config not found, using defaults');
 }
 
 // ===== Token 数据（异步）=====
@@ -63,6 +115,7 @@ const tokenSource = require('./modules/tokenSource');
 const costSource = require('./modules/costSource');
 // ===== CC (Claude Code fork) 数据源：扫描 ~/.claude/projects，逐消息聚合模型+token+费用 =====
 const ccSource = require('./modules/cc-source');
+const harnessSource = require('./modules/harness-source');
 bootLog('2', 'modules loaded: tokenSource=ok costSource=ok ccSource=ok');
 
 // ===== 进程级异常兜底：任何未捕获异常/拒绝都写日志，避免直接闪退 =====
@@ -303,6 +356,10 @@ async function buildFullPayload() {
       costToday: cost ? cost.todayCost : 0,
       costByModel: cost ? cost.byModel : [],
       cc, // CC (Claude Code fork) 模型/token/费用聚合
+      harnessToken: { byModel: harnessSource.mergeTokenByModel([
+        { harness: 'workbuddy', models: (aggregate && aggregate.byModel) || [] },
+        { harness: 'claude', models: (cc && cc.byModel) || [] }
+      ]) },
       since: {
         calls: sinceCalls.length,
         tokens: sinceTokens,
@@ -426,7 +483,7 @@ function createWindow() {
     transparent: false,
     frame: false,
     alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: true,    // 不在任务栏显示，改用系统托盘(小托盘)常驻管理
     resizable: true,       // 允许程序化 resize（收起/展开切换尺寸）
     hasShadow: true,
     backgroundColor: '#1a1a2e',
@@ -456,6 +513,7 @@ function createWindow() {
 
   mainWindow.show();
   mainWindow.focus();
+  createTray();
 
   // 右键菜单
   const ctxMenu = Menu.buildFromTemplate([
@@ -478,6 +536,12 @@ ipcMain.handle('get-config', async () => CONFIG);
 ipcMain.handle('get-token-data', async () => {
   try { return await buildFullPayload(); }
   catch (e) { _crashLog('get-token-data', e); return { aggregate: null, recentCalls: [], costTotal: 0, costToday: 0, costByModel: [], error: String(e && e.message || e) }; }
+});
+
+// 本机 harness 发现（含 token 可用性标注）
+ipcMain.handle('get-harnesses', async () => {
+  try { return await harnessSource.detectHarnesses(); }
+  catch (e) { _crashLog('get-harnesses', e); return []; }
 });
 ipcMain.handle('quit-app', async () => { app.quit(); return true; });
 ipcMain.handle('set-window-size', async (e, w, h) => {
@@ -544,4 +608,4 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); if (tray) { try { tray.destroy(); } catch {} } });

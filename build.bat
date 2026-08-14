@@ -35,14 +35,18 @@ if not exist "node_modules\electron-builder" (
     )
 )
 
+:: 修复 electron-builder 在 Windows 上的 rename EPERM 竞态（幂等，可重复执行）
+echo [2/5] 应用 electron-builder 兼容补丁...
+call node scripts\patch-electron-builder.js >> "%LOGFILE%" 2>&1
+
 :: 清理旧输出
-echo [2/4] 清理旧输出...
+echo [3/5] 清理旧输出...
 if exist "..\wb-monitor-output" (
     rd /s /q "..\wb-monitor-output" 2>nul
 )
 
 :: 执行构建
-echo [3/4] 打包中（NSIS 安装版 + Portable 便携版）...
+echo [4/5] 打包中（NSIS 安装版 + Portable 便携版）...
 echo   此步骤需下载 Electron 运行时，请耐心等待 1-3 分钟...
 echo.
 call npx electron-builder --win --config.directories.output=../wb-monitor-output >> "%LOGFILE%" 2>&1
@@ -66,7 +70,7 @@ if errorlevel 1 (
 )
 
 :: 显示结果
-echo [4/4] 完成！生成文件：
+echo [5/5] 完成！生成文件：
 echo.
 set FOUND=0
 if exist "..\wb-monitor-output" (

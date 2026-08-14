@@ -1,6 +1,6 @@
 {
   "name": "wb-monitor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "WorkBuddy Desktop Monitor",
   "main": "main.js",
   "author": "jarves",
@@ -67,13 +67,7 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-      "executableArgs": [
-        "--in-process-gpu",
-        "--disable-gpu",
-        "--no-sandbox",
-        "--disable-dev-shm-usage"
-      ]
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -81,7 +75,11 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "WB Monitor",
-      "uninstallDisplayName": "WB Monitor"
+      "uninstallDisplayName": "WB Monitor",
+      "artifactName": "WB-Monitor-${version}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "WB-Monitor-${version}-Portable.${ext}"
     }
   }
 }
