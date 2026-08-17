@@ -602,12 +602,23 @@ function registerShortcuts() {
 
 // ===== 单实例锁 =====
 bootLog('2b', 'requesting single-instance lock');
-if (!app.requestSingleInstanceLock()) {
+function _exitBecauseLocked() {
   bootLog('0-LOCKED', 'another WB Monitor instance is already running; this duplicate exits');
-  // 不强行 quit 已有实例，只让本副本静默退出（避免用户误以为没启动）
+  // 不再静默退出 —— 弹窗告诉用户「为什么打不开」，避免误以为没启动
+  try {
+    const { dialog } = require('electron');
+    dialog.showMessageBoxSync(null, {
+      type: 'warning',
+      title: 'WB Monitor 已在运行',
+      message: 'WB Monitor 的另一个实例已经在运行（可能是旧的打包版 WB Monitor.exe，或上次没关干净的源码版 electron）。\n\n请先在任务管理器结束 "WB Monitor.exe" 与命令行含 wb-monitor 的 electron 进程，再双击 start.bat。',
+      buttons: ['知道了']
+    });
+  } catch (e) { bootLog('0-LOCKED-DLG', String(e)); }
   process.exit(0);
 }
-
+if (!app.requestSingleInstanceLock()) {
+  _exitBecauseLocked();
+} else {
 app.whenReady().then(() => {
   bootLog('3', 'app whenReady fired');
   loadConfig();
@@ -622,6 +633,7 @@ app.whenReady().then(() => {
     _crashLog('window-create', e);
   }
 });
+}
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); if (tray) { try { tray.destroy(); } catch {} } });
