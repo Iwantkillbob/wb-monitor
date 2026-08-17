@@ -7,6 +7,14 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// 顶部面包屑：即便后续 require('electron') 抛错，也能证明本脚本已被启动。
+// 用于定位"双击后毫无日志"——确认是 .bat 没调到 node，还是 node 起脚本后崩溃。
+try {
+  const _bm = path.join(__dirname, '..', 'start-clean.started.log');
+  fs.writeFileSync(_bm, new Date().toISOString() + ' start-clean.js started; node=' + process.version +
+    '; NODE_OPTIONS=' + (process.env.NODE_OPTIONS || '(none)') + '\n');
+} catch (e) {}
+
 /**
  * 启动前清理：解决“重启没用 / 双击 start.bat 仍显示旧数据 / 打不开”的根因。
  * 1) 删掉陈旧的 Electron 单实例锁文件（%~APPDATA%/wb-monitor/lockfile 等）。

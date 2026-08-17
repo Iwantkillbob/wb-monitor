@@ -13,6 +13,8 @@ crash.log
 debug.log
 launch.log
 renderer-diag.log
+start-clean.started.log
+desktop-launch.log
 
 # 开发草稿 / 测试文件
 test-*.js
