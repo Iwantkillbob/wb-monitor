@@ -25,6 +25,25 @@ const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
 
+// ===== 进程级异常兜底（必须最早注册：连 require 阶段抛错也能捕获，并弹窗告知，不再无声闪退）=====
+const _CRASH_LOG = path.join(__dirname, 'crash.log');
+function _crashLog(tag, e) {
+  try {
+    const line = new Date().toISOString() + ' [' + tag + '] ' + (e && e.stack ? e.stack : (e && e.message ? e.message : e)) + '\n';
+    require('fs').appendFileSync(_CRASH_LOG, line);
+  } catch {}
+}
+function _crashBox(msg) {
+  try {
+    require('child_process').execFile('powershell', ['-NoProfile', '-Command',
+      'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(' +
+      JSON.stringify('WB Monitor 启动/运行失败：\n' + msg + '\n\n详情已写入 crash.log，请发给开发。') +
+      ', \'WB Monitor 错误\', \'OK\', \'Error\')'], { windowsHide: true }, () => {});
+  } catch (e) {}
+}
+process.on('uncaughtException', (e) => { _crashLog('uncaughtException', e); _crashBox((e && e.stack) || String(e)); });
+process.on('unhandledRejection', (e) => { _crashLog('unhandledRejection', e); _crashBox('未处理的 Promise 拒绝:\n' + ((e && e.stack) || String(e))); });
+
 // ===== 启动握手日志（写 stderr + 文件，方便排查 "npm start 一闪而过" 类问题）=====
 // 打包后 __dirname 指向 resources/app，NSIS 默认装到 Program Files（只读），
 // 日志写不进去就等于没有排查手段。故打包态改写用户数据目录：
@@ -111,26 +130,27 @@ function loadConfig() {
 }
 
 // ===== Token 数据（异步）=====
-const tokenSource = require('./modules/tokenSource');
-// ===== 成本数据（来自 workbuddy.db，与 cc switch 同源）=====
-const costSource = require('./modules/costSource');
-// ===== CC (Claude Code fork) 数据源：扫描 ~/.claude/projects，逐消息聚合模型+token+费用 =====
-const ccSource = require('./modules/cc-source');
-const harnessSource = require('./modules/harness-source');
-// ===== DSH (DeepSeek Harness) 数据源：扫描 ~/.dsh/sessions，解析 zstd 压缩 JSONL 的真实模型+token =====
-const dshSource = require('./modules/dshSource');
-bootLog('2', 'modules loaded: tokenSource=ok costSource=ok ccSource=ok');
-
-// ===== 进程级异常兜底：任何未捕获异常/拒绝都写日志，避免直接闪退 =====
-const _CRASH_LOG = path.join(__dirname, 'crash.log');
-function _crashLog(tag, e) {
-  try {
-    const line = new Date().toISOString() + ' [' + tag + '] ' + (e && e.stack ? e.stack : (e && e.message ? e.message : e)) + '\n';
-    require('fs').appendFileSync(_CRASH_LOG, line);
-  } catch {}
+let tokenSource, costSource, ccSource, harnessSource, dshSource;
+try {
+  tokenSource = require('./modules/tokenSource');
+  // ===== 成本数据（来自 workbuddy.db，与 cc switch 同源）=====
+  costSource = require('./modules/costSource');
+  // ===== CC (Claude Code fork) 数据源：扫描 ~/.claude/projects，逐消息聚合模型+token+费用 =====
+  ccSource = require('./modules/cc-source');
+  harnessSource = require('./modules/harness-source');
+  // ===== DSH (DeepSeek Harness) 数据源：扫描 ~/.dsh/sessions，解析 zstd 压缩 JSONL 的真实模型+token =====
+  dshSource = require('./modules/dshSource');
+  bootLog('2', 'modules loaded: tokenSource=ok costSource=ok ccSource=ok');
+} catch (e) {
+  _crashLog('require-modules', e);
+  _crashBox('模块加载失败：' + (e && e.message || e) + '\n请确认 modules/ 目录完整未被破坏。');
+  throw e; // 让顶层 uncaughtException 再兜一层并退出，避免后续空引用导致更难懂的崩溃
 }
-process.on('uncaughtException', (e) => { _crashLog('uncaughtException', e); });
-process.on('unhandledRejection', (e) => { _crashLog('unhandledRejection', e); });
+
+// ===== 渲染进程崩溃兜底：弹窗 + 写日志，不再无声闪退 =====
+app.on('render-process-gone', (_ev, _webContents, details) => {
+  _crashLog('render-process-gone', new Error(JSON.stringify(details || {})));
+});
 
 // ===== 网速（跨平台真实字节计数）=====
 // Windows netstat -e 在中文系统输出"字节"而非"Bytes"，需兼容多语言。
@@ -526,6 +546,15 @@ function createWindow() {
     if (msg.includes('[WB-Monitor') || level < 2)
       bootLog('CON', 'renderer console[' + level + ']: ' + (msg || '').slice(0, 300));
   });
+  // 渲染进程崩溃：弹窗告知并留痕（否则窗口一闪即关、无声无息）
+  mainWindow.webContents.on('crashed', (_ev, killed) => {
+    _crashLog('renderer-crashed', new Error('webContents crashed, killed=' + killed));
+    try {
+      const { dialog } = require('electron');
+      if (!mainWindow.isDestroyed())
+        dialog.showMessageBoxSync(mainWindow, { type: 'error', title: 'WB Monitor 渲染崩溃', message: '界面进程崩溃（' + (killed ? '被系统杀死' : '意外崩溃') + '）。\n崩溃详情已写入 crash.log，请发给开发。', buttons: ['知道了'] });
+    } catch (e) { bootLog('crashed-dlg-fail', String(e)); }
+  });
 
   mainWindow.show();
   mainWindow.focus();
@@ -628,6 +657,9 @@ app.whenReady().then(() => {
     bootLog('4', 'window created');
     registerShortcuts();
     bootLog('5', 'shortcuts registered');
+    // 存活心跳：若 boot.log 出现 ALIVE-3s / ALIVE-10s，说明进程没崩、是 GUI 显示问题；若只到某一步，则卡在那一环
+    setTimeout(() => bootLog('ALIVE-3s', 'process alive, window shown=' + (mainWindow && mainWindow.isVisible())), 3000);
+    setTimeout(() => bootLog('ALIVE-10s', 'process alive, window shown=' + (mainWindow && mainWindow.isVisible())), 10000);
   } catch (e) {
     bootLog('4-FAIL', (e && e.stack) || String(e));
     _crashLog('window-create', e);
