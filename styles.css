@@ -478,6 +478,15 @@ body.mode-ball .ball-container {
   letter-spacing: 0.5px;
 }
 .call-row .dsh-model-name { color: #5ab0ff !important; }
+
+/* ===== WB 本地调用行（统一 feed 内）===== */
+.call-row.wb-call { background: rgba(167,139,250,0.05); border-left: 2px solid rgba(167,139,250,0.30); }
+.call-row .wb-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 6px;
+  background: rgba(167,139,250,0.18); color: #a78bfa; margin-left: 6px; margin-right: 6px;
+  letter-spacing: 0.5px;
+}
 .live-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: #6cceb0; animation: liveBlink 1.5s ease-in-out infinite;

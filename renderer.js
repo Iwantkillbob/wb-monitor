@@ -146,27 +146,30 @@
       const isCC = !!c.fromCC;  // CC Switch 调用（有真实 token 明细）
       const isDsh = !!c.fromDsh; // DSH (DeepSeek Harness) 调用（真实模型名 + token）
       // 三路数据源样式区分：
-      //   本地(tokenSource) → 模型名 + route · token I/O
+      //   本地(tokenSource) → harness路由 · 模型显示名 + token I/O
       //   远程(costSource auto) → auto · 远程徽标 + 成本计费
-      //   CC Switch(ccSource)  → 模型名 + CC 徽标 + 真实 token I/O（与本地同格式但不同色）
+      //   CC Switch(ccSource)  → 路由名 + CC 徽标 + 真实模型名（harness在前，模型在后）
+      //   DSH(dshSource)      → 供应商 + DSH 徽标 + 真实模型名（harness在前，模型在后）
       let modelLabel, ioText, rowClass = '';
       if (isRemote) {
         modelLabel = '<span class="call-model">' + (c.route || 'auto') + '</span><span class="remote-badge">远程</span>';
         ioText = '<span class="call-io remote-io">成本计费</span>';
         rowClass = ' remote';
       } else if (isCC) {
-        modelLabel = '<span class="call-model cc-model-name">' + (c.model || '--') + '</span><span class="cc-badge">CC</span>' +
-          (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
+        const ccRoute = (c.route && c.route !== '—') ? c.route : 'CC';
+        modelLabel = '<span class="call-route">' + ccRoute + '</span><span class="cc-badge">CC</span><span class="call-model cc-model-name">' + (c.model || '--') + '</span>';
         ioText = '<span class="call-io"><span class="in">' + fmt(c.inputTokens) + '</span> / <span class="out">' + fmt(c.outputTokens) + '</span> tok</span>';
         rowClass = ' cc-call';
       } else if (isDsh) {
-        modelLabel = '<span class="call-model dsh-model-name">' + (c.model || '--') + '</span><span class="dsh-badge">DSH</span>' +
-          (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
+        const dshRoute = (c.route && c.route !== '—') ? c.route : 'DSH';
+        modelLabel = '<span class="call-route">' + dshRoute + '</span><span class="dsh-badge">DSH</span><span class="call-model dsh-model-name">' + (c.model || '--') + '</span>';
         ioText = '<span class="call-io"><span class="in">' + fmt(c.inputTokens) + '</span> / <span class="out">' + fmt(c.outputTokens) + '</span> tok</span>';
         rowClass = ' dsh-call';
       } else {
-        modelLabel = '<span class="call-model">' + (c.model || '--') + '</span>' + (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
+        // WB 本地(tokenSource)：harness标识(WorkBuddy) + WB徽标 + 模型名(hy3等内部路由名)
+        modelLabel = '<span class="call-route">WorkBuddy</span><span class="wb-badge">WB</span><span class="call-model">' + (c.model || '--') + '</span>' + (c.route && c.route !== '—' ? '<span class="call-route">· ' + c.route + '</span>' : '');
         ioText = '<span class="call-io"><span class="in">' + fmt(c.inputTokens) + '</span> / <span class="out">' + fmt(c.outputTokens) + '</span> tok</span>';
+        rowClass = ' wb-call';
       }
       return (
         '<div class="call-row' + (i === 0 ? ' latest' : '') + rowClass + '">' +
