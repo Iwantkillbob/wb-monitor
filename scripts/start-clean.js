@@ -41,7 +41,10 @@ function preLaunchCleanup() {
   } catch (e) { /* 无遗留进程或权限不足，忽略 */ }
 }
 
-const KNOWN_BAD = ['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'ELECTRON_ENABLE_LOGGING_FILE', 'SENTRY_DSN'];
+// 会在启动时让 electron 崩溃的环境变量（尤其 NODE_OPTIONS=--use-system-ca 会导致 electron
+// 直接 exit code 9 闪退；ELECTRON_RUN_AS_NODE 会让 electron 退化成 node 不启动 GUI）。
+// 这些变量通常是其它桌面应用（如 WorkBuddy）注入到全局环境的，必须清除。
+const KNOWN_BAD = ['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'ELECTRON_ENABLE_LOGGING_FILE', 'ELECTRON_ENABLE_LOGGING', 'SENTRY_DSN', 'ELECTRON_DISABLE_SECURITY_WARNINGS'];
 const AUDIT = known => {
   const hits = known.filter(k => process.env[k]);
   if (hits.length === 0) {
@@ -66,6 +69,13 @@ const child = spawn(electronBin, [path.join(__dirname, '..'), '--enable-logging'
   env: process.env,     // 已被 delete 干扰项
   shell: false
 });
-child.on('exit', code => process.exit(code || 0));
+child.on('exit', code => {
+  if (code && code !== 0) {
+    console.log('\n[clean-start] ⚠ electron 异常退出 (code=' + code + ')。');
+    console.log('  若提示 NODE_OPTIONS / --use-system-ca，说明环境变量未被清除 —— 请检查系统环境变量后重试。');
+    console.log('  详细原因见项目目录下的 boot.log / crash.log。');
+  }
+  process.exit(code || 0);
+});
 process.on('SIGINT', () => child.kill('SIGINT'));
 process.on('SIGTERM', () => child.kill('SIGTERM'));
