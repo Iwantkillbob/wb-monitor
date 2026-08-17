@@ -11,6 +11,7 @@ out/
 boot.log
 crash.log
 debug.log
+launch.log
 renderer-diag.log
 
 # 开发草稿 / 测试文件

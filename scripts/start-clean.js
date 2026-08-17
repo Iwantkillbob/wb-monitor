@@ -64,17 +64,47 @@ preLaunchCleanup();
 // 找到 electron 可执行：node_modules/.bin/electron（Windows 下可能是个 .cmd/.ps1，需跨平台）
 const electronBin = require('electron');
 
+// 把 electron 的 stdout/stderr 落到 launch.log，即使"闪退"也能事后查看真实报错
+const LAUNCH_LOG = path.join(__dirname, '..', 'launch.log');
+let launchLog;
+try { launchLog = fs.createWriteStream(LAUNCH_LOG, { flags: 'a' }); } catch (e) { launchLog = null; }
+const ts = () => new Date().toISOString();
+function logLine(s) {
+  const line = ts() + ' ' + s + '\n';
+  if (launchLog) try { launchLog.write(line); } catch {}
+  process.stdout.write(line);
+}
+
 const child = spawn(electronBin, [path.join(__dirname, '..'), '--enable-logging', '--in-process-gpu', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'], {
-  stdio: 'inherit',
+  stdio: ['ignore', 'pipe', 'pipe'],
   env: process.env,     // 已被 delete 干扰项
   shell: false
 });
+child.stdout.on('data', d => logLine('[electron] ' + d.toString().trimEnd()));
+child.stderr.on('data', d => logLine('[electron-ERR] ' + d.toString().trimEnd()));
+child.on('error', e => logLine('[spawn-error] ' + (e && e.stack || e)));
+
+// 异常退出：写 launch.log + 弹 Windows 提示框写明原因（避免"闪退看不到原因"）
+function showCrashBox(code, reason) {
+  const msg = 'WB Monitor 启动失败（exit code=' + code + '）。\n\n' +
+    (reason || '原因已记录到项目目录 launch.log，可发给开发排查。') +
+    '\n\n请确认：① 双击的是 start.bat / 本快捷方式，不是旧 WB Monitor.exe；② 若提示 NODE_OPTIONS / --use-system-ca，是系统环境变量冲突，start.bat 本应已清除，可重试一次。';
+  try {
+    execFile('powershell', ['-NoProfile', '-Command',
+      'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(' +
+      JSON.stringify(msg) + ', \'WB Monitor 启动失败\', \'OK\', \'Error\')'],
+      { windowsHide: true }, () => {});
+  } catch (e) { /* 弹窗失败就只写日志 */ }
+}
 child.on('exit', code => {
   if (code && code !== 0) {
-    console.log('\n[clean-start] ⚠ electron 异常退出 (code=' + code + ')。');
-    console.log('  若提示 NODE_OPTIONS / --use-system-ca，说明环境变量未被清除 —— 请检查系统环境变量后重试。');
-    console.log('  详细原因见项目目录下的 boot.log / crash.log。');
+    const reason = (code === 9)
+      ? '疑似 NODE_OPTIONS 环境变量冲突（--use-system-ca 不被 electron 允许）。'
+      : '';
+    logLine('[clean-start] ⚠ electron 异常退出 (code=' + code + ')。' + (reason ? ' ' + reason : ''));
+    showCrashBox(code, reason);
   }
+  if (launchLog) try { launchLog.end(); } catch {}
   process.exit(code || 0);
 });
 process.on('SIGINT', () => child.kill('SIGINT'));
