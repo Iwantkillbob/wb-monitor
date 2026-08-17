@@ -142,8 +142,64 @@ wb-monitor/
 │   ├── start-clean.js   # 干净启动脚本（清干扰变量 + GPU 参数）
 │   ├── diag.js          # 诊断工具
 │   └── verify-boot.js   # 启动验证
+├── dist/                # 构建产物（electron-builder 输出，含 WB-Monitor-*-win-x64.exe 单文件便携版）
 └── README.md            # 本文件
 ```
+> 桌面另有两个启动器（不在仓库内）：`WB Monitor 源码版.bat`（日常）、`WB Monitor 一键启动(管理员).bat`（清锁/应急）。
+
+## 排障实录（2026-08「闪退 / 打不开」事件）
+
+> 环境：Windows 11 24H2、无 GPU/远程桌面；Node 用 `C:\Users\DCKJ\AppData\Local\hermes\node`（v22.23.1）；
+> 源码工程 `D:\workbody\2026-07-31-11-14-14\wb-monitor`；仓库 `github.com/Iwantkillbob/wb-monitor`。
+
+### 现象
+从桌面/资源管理器双击 → 窗口一闪即关，**任何日志文件都不生成**（连启动器第一行就该写的面包屑日志都没有）。
+
+### 真因（已逐项验证，非猜测）
+1. **破损的打包版 `WB Monitor.exe` 才是罪魁**。早期 `electron-builder` 打的包，启动即因
+   `NODE_OPTIONS=--use-system-ca` 被 electron 拒绝（exit code 9）静默闪退、**不写任何日志**。
+   用户双击的其实一直是这个坏 exe（开始菜单/任务栏搜 "WB Monitor" 出来的就是它），不是源码版。
+2. **`NODE_OPTIONS` 是 WorkBuddy 注入进自身进程树的，并非系统持久变量**（已查注册表 HKCU/HKLM
+   `Environment` 均无 `NODE_OPTIONS`）。所以**从资源管理器正常双击 exe 时环境是干净的，不会触发 exit 9**；
+   只有从 WorkBuddy 进程树内拉起才会带这串变量。
+3. **陈旧进程长期占着单实例锁**。旧打包 exe 的实例（`WB Monitor.exe`）与早前沙箱测试遗留的源码版
+   `electron.exe` 一直没被杀掉，新实例抢不到锁 → 静默退出 / 弹"已在运行"。
+
+### 已落地的修复（commit 见 git log）
+- `scripts/start-clean.js`：启动前**同步杀掉遗留进程**、**删除陈旧锁文件**、**剥离 `NODE_OPTIONS` 等干扰变量**
+  再 spawn electron；并把 electron 的 stderr 落盘到 `launch.log`，异常退出弹 Windows 提示框写明原因。
+- `main.js`（a6df900）：崩溃兜底**前移到最顶部**——`require` 阶段抛错 / 未捕获异常 / 未处理 Promise 拒绝 /
+  渲染进程崩溃（`webContents.on('crashed')` + `app.on('render-process-gone')`）全部**弹窗 + 写 `crash.log`**，
+  不再无声闪退；窗口创建后加 3s/10s 存活心跳写进 `boot.log`，便于定位卡在哪一环。
+- 桌面交付两个启动器（见下）。
+
+### 运行方式（三种入口，按需）
+| 入口 | 用途 | 何时用 |
+|------|------|--------|
+| **`dist/WB-Monitor-*-win-x64.exe`**（打包产物） | 单文件，资源管理器双击即运行 | **首选**。干净环境，正常双击即可 |
+| `WB Monitor 源码版.bat` / `start.bat` | 走 `start-clean.js` 剥离变量后起源码 | 当从 WorkBuddy 进程树内拉起（带 `NODE_OPTIONS`）时用 |
+| `WB Monitor 一键启动(管理员).bat` | 杀全部陈旧进程 → 改坏 exe 为 `.bak` → 删旧快捷方式 → 起源码 | 遇到"已在运行"或锁被占用时，**右键以管理员身份运行一次**即可彻底清锁 |
+
+> 调用流水的展示格式已统一为 **harness → 徽标 → 模型**，例如
+> `WorkBuddy [WB] hy3`、`claude-sonnet-4 [CC]`、`qwen3.8-max [DSH]`。
+
+## 构建（打包成 exe）
+
+前置：已 `npm install`（含 `electron` + `electron-builder`）。
+
+```bash
+# 方式一：直接命令（产出单文件便携版到 dist/）
+node_modules/.bin/electron-builder --win portable --config.directories.output=dist
+
+# 方式二：一键脚本（会先打 EPERM 兼容补丁，输出到 dist/）
+build.bat
+```
+
+产物：`dist/WB-Monitor-1.1.2-win-x64.exe`（单文件便携版，拷走即用）。
+如需安装版（含桌面快捷方式）把 `portable` 换成 `nsis` 或省略（默认打 nsis + portable 两个）。
+
+> 注意：打包出的 exe 从资源管理器双击运行环境是干净的，无需手动剥离变量；
+> 仅当从 WorkBuddy 内部拉起时才需要走 `start.bat` 那条剥离链路。
 
 ## 已知限制
 

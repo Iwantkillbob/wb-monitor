@@ -41,15 +41,17 @@ call node scripts\patch-electron-builder.js >> "%LOGFILE%" 2>&1
 
 :: 清理旧输出
 echo [3/5] 清理旧输出...
-if exist "..\wb-monitor-output" (
-    rd /s /q "..\wb-monitor-output" 2>nul
+if exist "dist" (
+    rd /s /q "dist" 2>nul
 )
 
-:: 执行构建
-echo [4/5] 打包中（NSIS 安装版 + Portable 便携版）...
-echo   此步骤需下载 Electron 运行时，请耐心等待 1-3 分钟...
+:: 执行构建（便携单文件 -> dist/）
+echo [4/5] 打包中（Portable 单文件 exe）...
+echo   此步骤需准备 Electron 运行时，请耐心等待 1-3 分钟...
 echo.
-call npx electron-builder --win --config.directories.output=../wb-monitor-output >> "%LOGFILE%" 2>&1
+:: 若在 WorkBuddy 环境下构建，NODE_OPTIONS 会被注入 safe-delete 钩子导致删临时目录失败，先清空
+set NODE_OPTIONS=
+call npx electron-builder --win portable --config.directories.output=dist >> "%LOGFILE%" 2>&1
 
 if errorlevel 1 (
     echo.
@@ -73,8 +75,8 @@ if errorlevel 1 (
 echo [5/5] 完成！生成文件：
 echo.
 set FOUND=0
-if exist "..\wb-monitor-output" (
-    for %%f in ("..\wb-monitor-output\*.exe") do (
+if exist "dist" (
+    for %%f in ("dist\*.exe") do (
         echo   ★ %%~nxf
         echo      ^> %%~dpf
         set FOUND=1
