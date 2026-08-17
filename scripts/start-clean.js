@@ -38,14 +38,16 @@ function preLaunchCleanup() {
   try { console.log('[clean-start] 已删除陈旧单实例锁文件'); } catch (e) {}
 
   // 2) 终止遗留进程（不误杀其它 electron 应用）
+  //    关键：必须用同步(execFileSync)而非异步(execFile)，否则杀进程还没完成时新 electron 已去抢锁，
+  //    会误判"另一个实例在运行"而静默退出——这正是"双击打不开 / 闪退"的根因之一。
   try {
     const killScript = [
       "Get-CimInstance Win32_Process -Filter \"Name='WB Monitor.exe'\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
       "Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine -like '*wb-monitor*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
       "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -like '*wb-monitor-output*win-unpacked*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
     ].join('; ');
-    execFile('powershell', ['-NoProfile', '-Command', killScript], { stdio: 'ignore', windowsHide: true }, () => {});
-    console.log('[clean-start] 已尝试清理遗留的 WB Monitor / 源码版 electron 进程');
+    execFileSync('powershell', ['-NoProfile', '-Command', killScript], { stdio: 'ignore', windowsHide: true });
+    console.log('[clean-start] 已同步清理遗留的 WB Monitor / 源码版 electron 进程');
   } catch (e) { /* 无遗留进程或权限不足，忽略 */ }
 }
 
